@@ -28,7 +28,7 @@ flowchart LR
     R --> RC[Root cause + evidence]
 ```
 - **Input.** A digest built by deterministic, read-only tools (run context, log digest, kernel errors of the whole run, typed facts) plus the expert preload.
-  The tools are served over MCP, so the expert teacher and the local model use exactly the same ones. The champion answers in one pass from the digest;
+  The tools come from a **custom MCP server connected to the triage web app**, so the writer's nodes can reach the run's logs and chain several operations on them (read a log window, search kernel errors, extract facts, match a bug's signature). The expert teacher and the local model use exactly the same tools. The champion answers in one pass from the digest;
   the tool-calling loop (`run_agent`) is kept for teacher transcripts and variants.
 - **Stage 1, behaviour cloning (SFT).** Supervised fine-tuning on expert transcripts: the model copies correct examples, with loss on the assistant's tokens only.
   QLoRA on Qwen3-8B, 16k-token context through chunked causal attention, checkpoint and resume.

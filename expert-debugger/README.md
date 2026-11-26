@@ -7,7 +7,7 @@ trained on several years of human triage decisions. Every model is **served on l
 
 **Deployed and available to debuggers.** The system is integrated into the validation team's triage web app, where debuggers use it daily
 on live failures. A guided flow walks them from noise filtering to known issues, the agent's root cause and new issues,
-and nothing is written back to the bug tracker until they confirm. The models are served with **vLLM on Intel XPU GPUs**.
+and nothing is written back to the bug tracker until they confirm. The models are served with **vLLM on Intel XPU GPUs**, and reach the run's logs through a **custom MCP server** connected to the web app.
 
 ![Triage UI with the AI system connected](image.png)
 
@@ -44,29 +44,11 @@ that touch sensitive enterprise data. The notebooks run on **synthetic data**, s
 Evaluation is leak-free: the answer is hidden at test time, the bug pool is cut off at the run date, and
 splits are grouped by bug, so no bug appears in both train and test.
 
-The system went through two versions. Version 1 was a matcher on top of a classic ranker. After a round of research and training
-(behaviour cloning, preference tuning, an expert-context node, a verify-and-revise loop), version 2 adds a root-cause writer
+The current system is shown first. It started as a matcher on top of a classic ranker (version 1, below). After a round of research and training
+(behaviour cloning, preference tuning, an expert-context node, a verify-and-revise loop), it adds a root-cause writer
 and improves accuracy on every board, most on bugs the system has never seen.
 
-### Version 1: first version (2026-11-05)
-
-![headline](00-architecture/fig-headline.png)
-
-119 failures with a known bug, 72 of them bugs never seen in training.
-
-| System | Top-1 correct | Unseen bugs (n=72) | API cost |
-|---|---|---|---|
-| No-LLM ranker (classic ML) | 69.7% | 63.9% | 0 |
-| Commercial LLM agent + confidence gate | 73.1% | 41.7% | per call |
-| **Local fine-tuned 8B matcher** | **73.9%** | **66.7%** | **0** |
-| **Local 8B matcher + confidence gate** | **77.3%** | – | **0** |
-
-| Fleet-wide (1,591 runs) | Result |
-|---|---|
-| Production classifier, top-1 / top-3 (no LLM) | **78.8% / 90.8%** |
-| Precision on runs auto-linked without a human | **85.4%** |
-
-### Version 2: latest champions (frozen 2026-11-09, wired and evaluated through 2026-11-19)
+### Current system: latest champions (frozen 2026-11-09, wired and evaluated through 2026-11-19)
 
 ![champion](00-architecture/fig-champion.png)
 
@@ -107,6 +89,24 @@ and a bad one, and is nudged to prefer the good. The first writer only imitates;
 - Auto-links the confident cases and routes the rest to a human, so engineers review fewer runs.
 - Every answer is backed by cited log evidence, and every human decision feeds the next retrain.
 
+### Where it started: version 1, first portfolio version (2026-11-05)
+
+![headline](00-architecture/fig-headline.png)
+
+119 failures with a known bug, 72 of them bugs never seen in training.
+
+| System | Top-1 correct | Unseen bugs (n=72) | API cost |
+|---|---|---|---|
+| No-LLM ranker (classic ML) | 69.7% | 63.9% | 0 |
+| Commercial LLM agent + confidence gate | 73.1% | 41.7% | per call |
+| **Local fine-tuned 8B matcher** | **73.9%** | **66.7%** | **0** |
+| **Local 8B matcher + confidence gate** | **77.3%** | – | **0** |
+
+| Fleet-wide (1,591 runs) | Result |
+|---|---|
+| Production classifier, top-1 / top-3 (no LLM) | **78.8% / 90.8%** |
+| Precision on runs auto-linked without a human | **85.4%** |
+
 ## System overview
 
 ```mermaid
@@ -144,7 +144,7 @@ flowchart LR
 | **DPO (direct preference optimization)** via TRL | Writer | Teach the model from pairs of good vs bad answers, with no separate reward model |
 | **Qwen3-8B** | Writer and matcher | Local open-weights base model |
 | **LLM agents** | RCA writer | Writes the evidence-cited root cause from a prepared evidence digest |
-| **Model Context Protocol (MCP)** | Tool layer | Standard tool server (metadata, log windows, search, facts) that builds the evidence the writer reads |
+| **Custom MCP server (Model Context Protocol)** | Tool layer, connected to the triage web app | Our own MCP server that gives the writer and verifier read-only access to the run's logs, kernel traces and metadata and lets them run several operations on them (windowed log reads, kernel-error search, fact extraction, pattern match). The same server backs the web app |
 | **Agent graph (LangGraph-style state machine)** | Investigation stage | Nodes, verify-revise loop, Done exit with a step cap |
 | **vLLM** | Inference | High-throughput LLM serving engine (continuous batching, OpenAI-style API), one endpoint per model, no external API |
 | **Intel XPU GPUs** | Training and inference | All fine-tuning and serving run on Intel data-centre GPUs (XPU backend for PyTorch and vLLM) |
@@ -212,7 +212,7 @@ flowchart TB
 | **Knowledge base and graph** | Searchable bug cards and a typed graph of bugs, tests, stacks and hosts in one Postgres | Hybrid retrieval + AGE graph | Candidate recall 95.9%, hybrid top-1 0.793 |
 | **XP node (expert preload)** | Adds expert context to the writer's prompt before it starts: diff against a known-good passing run, the test definition card and domain-expert notes | Deterministic, no model | 77.5% vs 74.4% for the ranker alone on the main board, with fewer broken answers |
 | **Writer** | Reads the evidence digest and writes the root cause as an ordered error chain, each link a verbatim log line | Qwen3-8B, 4-bit QLoRA, behaviour cloning then 3 rounds of DPO | 129 of 197, tied with a commercial agent at zero cost |
-| **Tool layer (MCP)** | Metadata, windowed log reader, kernel-error search over the whole run, typed fact extraction, cross-run pattern match | 7 tools, outputs capped | Builds the evidence the writer and verifier work from |
+| **Tool layer (custom MCP)** | A custom MCP server wired to the triage web app. Metadata, windowed log reader, kernel-error search over the whole run, typed fact extraction, cross-run pattern match | 7 tools, read-only, run-scoped, outputs capped | Lets the writer and verifier nodes reach the logs and chain several operations; builds the evidence they work from |
 | **Verifier** | Deterministic checks on the writer's answer: severe signatures never mentioned, evidence lines not found in the given evidence, test-content vs product contradictions | Plain code, free to run | Drives the revise loop |
 | **Agent graph loop** | `XP → Writer → Verifier → (Revise → Verifier)* → Done`. Exits when verified, stable, no valid output, or the step cap is hit | Explicit state machine, LangGraph-style, plain Python | Paired no-loop vs loop scoring on every run |
 | **KG node** | Looks up deterministic facts per candidate bug (same test definition, stack, host, owner, filed before this run) and feeds them to the matcher | Graph queries, no model | Gold bug shares the test definition 58% of the time vs 9% for wrong candidates |
@@ -230,10 +230,12 @@ flowchart TB
 
 See [00-architecture/data_pipeline.py](00-architecture/data_pipeline.py).
 
-## Roadmap
+## Roadmap: next steps
 
+- **Smaller hardware with OpenVINO.** Compress and optimise the final trained system (writer and matcher) with Intel OpenVINO so it runs on smaller, cheaper hardware and no longer needs heavy GPUs. Migrate serving from vLLM to **OpenVINO Model Server (OVMS)**, the native serving stack for Intel hardware.
+- **Formal MLOps with MLflow and Ansible.** MLflow to track experiments, version models and promote champions; Ansible to automate deployment, so the system keeps improving from new debugger feedback and is served to the app with no downtime.
 - Reinforcement learning on the full debugger loop (RCA, classifiers and tool calls on the logs).
 - Novel-bug evaluation: report "matched existing" separately from "correctly declared new bug + root cause".
 - Grow the bug graph and knowledge base from new triage decisions.
 
-*Personal portfolio summary. Numbers are aggregates, and all names, systems and data are abstracted.*
+*Numbers are aggregates, and all names, systems and data are abstracted.*
