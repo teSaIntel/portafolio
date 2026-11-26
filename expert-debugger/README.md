@@ -232,7 +232,7 @@ See [00-architecture/data_pipeline.py](00-architecture/data_pipeline.py).
 
 ## Roadmap: next steps
 
-- **Smaller hardware with OpenVINO.** Compress and optimise the final trained system (writer and matcher) with Intel OpenVINO so it runs on smaller, cheaper hardware and no longer needs heavy GPUs. Migrate serving from vLLM to **OpenVINO Model Server (OVMS)**, the native serving stack for Intel hardware.
+- **Smaller hardware with OpenVINO.** Compress and optimise the final trained system (writer and matcher) with Intel OpenVINO so it runs on smaller, cheaper hardware, possibly even CPU, and no longer needs heavy GPUs. CPU-only serving is the goal; reachable speed and accuracy will be measured. Migrate serving from vLLM to **OpenVINO Model Server (OVMS)**, the native serving stack for Intel hardware.
 - **Formal MLOps with MLflow and Ansible.** MLflow to track experiments, version models and promote champions; Ansible to automate deployment, so the system keeps improving from new debugger feedback and is served to the app with no downtime.
 - Reinforcement learning on the full debugger loop (RCA, classifiers and tool calls on the logs).
 - Novel-bug evaluation: report "matched existing" separately from "correctly declared new bug + root cause".
