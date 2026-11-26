@@ -5,7 +5,16 @@
 **What's in production.** Every failed run shows its top 3 suggested bugs, a route and the reasons behind them.
 On a frozen fleet snapshot (1,591 runs, 292 bug-linked) it gets **top-1 78.8%, top-3 90.8%** and auto-LINKs 72.6% of
 bug runs at **85.4% precision**. Runs with metadata only (no log window) reach 80.4% top-1 at 93.1% precision.
-With the **override rule** applied on top of an agent verdict, top-1 rises to **81.5%** (14 fixed, 1 broken).
+The classifier is usually more accurate than the root-cause agent, so it is the default. The agent **overrides it only when confidence in the classifier's pick is low**, measured by how many of the known issue's evidence lines are found in the real run logs.
+
+## Role in the latest system
+The classifier is still the production "suggested bugs" model, and it is also the **first stage of the root-cause pipeline**: its top-5 is the
+shortlist the writer and the matcher work from. It only **suggests a known issue**; it does not explain the failure or trace its root cause, which is the writer's job.
+
+- **Leak-free shortlist.** For the LLM stages the top-5 is produced out-of-fold (`shortlist_oof`): each fold is ranked by a model refit without that fold's labels and links.
+- **Recall@5 is the ceiling.** On the newest never-seen cycles (175 failures) it gets the right bug first for **65%** and inside the top-5 for **91%**.
+  The writer and matcher lift the final answer to 68.6% there, mostly on bugs the classifier had never seen.
+- **Compared on the main board** (258 failures), the ranker alone is right on 74.4%; with the writer, matcher and expert preload the chain reaches 77.5% (p = 0.039).
 
 ## Design
 ```mermaid
@@ -31,7 +40,7 @@ flowchart LR
 | **Open-set router** | Split conformal on the *absolute* top logit, calibrated on runs whose truth was a candidate (α = 0.1) | Softmax conformal can't say NEW (recall 0%); the absolute logit can (AUROC .92). Result: 82% singletons at **97.8% accuracy**, NEW recall .70 |
 | **Cold-start rule** | tf-idf of bug reports, used only for bugs with no training runs, above θ (≤ 2% false fires on calibration) | Covers what the classifier can't know: 4/4 correct on new bugs, and 30% fewer agent calls |
 | **Explanation** | Coefficient × value per feature, the matched signature lines, and linked runs from the same test or owner | People trust what they can check |
-| **Override rule** | The agent replaces the classifier's pick at confidence ≥ 0.8, or picks the classifier's #2 at ≥ 0.7 when that bug's probe evidence is ≥ the top's | The only LLM layer that measurably helped: +2.7 pts top-1 |
+| **Override rule** | The agent's pick replaces the classifier's only when the agent is confident (≥ 0.7), the classifier's pick has weak evidence (probe < 0.34: few of its known evidence lines appear in the real run logs) and the agent's bug has more | Keeps the more accurate model as the default and uses the agent only where the evidence contradicts the classifier |
 
 ## Lifecycle (MLOps)
 - **Champion / challenger.** Retraining triggers on bootstrap, new bugs, cycle rollover or new links. A challenger
@@ -65,9 +74,9 @@ and sibling bugs that the logs can't separate, not the method.
 ## Files
 | File | What |
 |---|---|
-| `classifier.py` | Stage 1, stage 2, hard rule, conformal router, cold-start rule, `decide`, override rule, registry, ledger, guarded recalibration |
+| `classifier.py` | Stage 1, stage 2, hard rule, conformal router, cold-start rule, `decide`, override rule, registry, ledger, guarded recalibration, out-of-fold shortlist for the LLM stages |
 | `ranker.py` | Pair features used by stage 2 (also usable alone as a simple ranker) |
-| `failure_ranker_colab.ipynb` | Trains the full champion on synthetic data, shows a decision with its explanation, the override rule and a drift → recalibration cycle |
+| `failure_ranker_colab.ipynb` | Trains the full champion on synthetic data, shows a decision with its explanation, the override rule, the out-of-fold shortlist and a drift → recalibration cycle |
 
 ---
-[← Back to the overview](../README.md) · The notebook runs on synthetic data; the numbers above come from the real (private) evaluation.
+[← Back to the overview](../README.md) · This folder is a curated version (architecture and technique only). The notebook runs on synthetic data; the numbers above come from the real (private) evaluation.

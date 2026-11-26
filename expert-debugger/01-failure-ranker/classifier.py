@@ -8,6 +8,7 @@
                ──► cold-start text rule          bug with no training runs whose report text matches strongly
                ──► explanation                   the features that pushed the score (coefficient x value)
     lifecycle: champion/challenger retraining, live refit on new human links, forward ledger + guarded recalibration
+    downstream: the leak-free top-5 shortlist (shortlist_oof) is what the root-cause writer and the matcher receive
 """
 from __future__ import annotations
 
@@ -178,18 +179,15 @@ def decide(champ: Champion, router: OpenSetRouter, cold: TextColdStart, r) -> di
             "set": keep, "why": champ.base.why(r, ranked[0][0])}
 
 
-def override_rule(ranked, agent: dict | None, probe: dict[str, float] | None = None, conf_any=.8, conf_second=.7):
-    """Live override calibration ("R1"), applied on click when the RCA agent has run: the classifier stays the
-    default; the agent's pick replaces it only at confidence >= 0.8, or when the agent picks the classifier's #2
-    at >= 0.7 and that bug's probe evidence (share of its signature lines found in this run) is > 0 and at least the
-    top's. Measured: 14 fixed / 1 broken, top-1 78.8% -> 81.5%."""
+def override_rule(ranked, agent: dict | None, probe: dict[str, float] | None = None, low=.34, min_conf=.7):
+    """The classifier is usually more accurate than the agent, so it stays the default. The agent overrides only when
+    confidence in the classifier's pick is low, measured by the probe: the share of that bug's known evidence lines
+    found in this run's real logs. It must also name a bug whose own probe evidence is higher than the top's."""
     top = ranked[0][0]
     if not agent or not agent.get("bug"):
         return top
-    b, c, probe = agent["bug"], agent.get("confidence", 0), probe or {}
-    if c >= conf_any:
-        return b
-    if len(ranked) > 1 and b == ranked[1][0] and c >= conf_second and probe.get(b, 0) > 0 and probe.get(b, 0) >= probe.get(top, 0):
+    b, probe = agent["bug"], probe or {}
+    if b != top and agent.get("confidence", 0) >= min_conf and probe.get(top, 0) < low and probe.get(b, 0) > probe.get(top, 0):
         return b
     return top
 
@@ -263,3 +261,24 @@ def evaluate(champ, router, cold, runs, unseen=frozenset()):
             m["unseen_top1"].append(d["top3"][0] == r["label"])
     return {k: (round(100 * sum(v) / len(v), 1), len(v)) for k, v in m.items() if v}, Counter(
         decide(champ, router, cold, r)["route"] for r in runs)
+
+
+def shortlist_oof(runs, bugs, folds=5, K=5, seed=0):
+    """Leak-free top-K shortlist for the downstream LLM stages. Each fold is ranked by a champion refit WITHOUT that fold's
+    labels and links, so the writer and matcher never see a ranking that already knew the answer."""
+    import random
+    idx = list(range(len(runs)))
+    random.Random(seed).shuffle(idx)
+    out = {}
+    for f in range(folds):
+        held = set(idx[f::folds])
+        champ = Champion(K=K).fit([r for i, r in enumerate(runs) if i not in held], bugs)
+        for i in held:
+            out[runs[i]["run"]] = champ.rank(runs[i])
+    return out
+
+
+def recall_at(shortlist, runs, ks=(1, 5)):
+    bug_runs = [r for r in runs if r["label"] != "NONE"]
+    return {k: round(100 * sum(r["label"] in [b for b, _ in shortlist[r["run"]][:k]] for r in bug_runs) / len(bug_runs), 1)
+            for k in ks}

@@ -4,8 +4,8 @@
 
 Three parts in **one Postgres** (pgvector + Apache AGE, [`schema.sql`](schema.sql)): **bug cards** (structured summaries),
 a **knowledge base** of everything people wrote, and a **knowledge graph** of who, what and where around every bug.
-They feed the agent's tools and the human evidence panel. Measured honestly, they add recall and evidence, not
-classifier accuracy.
+They widen the ranker's shortlist, feed the **KG node** of the investigation graph (deterministic facts about each candidate bug, handed to the matcher),
+and back the human evidence panel. Measured honestly, they add recall and evidence, not classifier accuracy.
 
 ## Knowledge base (documents)
 ```
@@ -43,6 +43,11 @@ reports, discussion threads, run comments
   the KB ranks their text) and read-only Cypher (200 rows max). Every tool hides the run being debugged and every link
   made after it, with a leak test that has to report 0 leaks.
 
+**KG node: candidate facts for the matcher.** For every shortlisted bug the graph answers, with no model, whether this run shares its test definition,
+software stack, host or owner with the bug's earlier linked runs, and whether the bug was filed before the run. The run itself and later links are hidden.
+Offline, the true bug shares the **test definition 58% of the time vs 9%** for a wrong candidate, and the **software stack 54% vs 13%**.
+That is a cheap, leak-free tie-breaker between sibling bugs whose logs look alike.
+
 **Honest results.** With a time cut, expert search puts the truth in its top 5 for **65%** of bug runs. Without the
 cut it looked like 70%, which was leakage, fixed. Personalised PageRank (HippoRAG-style) alone reaches recall@3 .86
 but is neutral as a classifier feature: it duplicates the hand-built graph features. The KB and KG back the right
@@ -58,9 +63,9 @@ back in the pool for 15 of 20 far misses.
 |---|---|
 | `knowledge.py` | Bug-card prompt and validator, BM25, RRF |
 | `kb_store.py` | KB: clean / quality / entities, idempotent ingest, chunking, incremental half-precision embeddings, leak-guarded hybrid search, threads |
-| `kg.py` | KG: schema, extract, purify (with report), hash-diff load, Apache AGE Cypher projection, domain/bug/expert views, leak-guarded PPR |
+| `kg.py` | KG: schema, extract, purify (with report), hash-diff load, Apache AGE Cypher projection, domain/bug/expert views, per-candidate facts (KG node), leak-guarded PPR |
 | `schema.sql` | Postgres DDL: pgvector tables + indexes, curated graph tables, build report |
-| `knowledge_layer_colab.ipynb` | Builds both on synthetic data and shows why leak guards matter: PPR recall@5 .985 leaky vs .785 leak-free |
+| `knowledge_layer_colab.ipynb` | Builds both on synthetic data, shows why leak guards matter (PPR recall@5 .985 leaky vs .785 leak-free) and the candidate facts: right vs wrong bug |
 
 ---
-[← Back to the overview](../README.md) · The notebook runs on synthetic data; the numbers above come from the real (private) evaluation.
+[← Back to the overview](../README.md) · This folder is a curated version (architecture and technique only). The notebook runs on synthetic data; the numbers above come from the real (private) evaluation.

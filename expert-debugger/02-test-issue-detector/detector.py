@@ -4,8 +4,13 @@ A false positive hides a real bug, so the model only fires at an operating point
 precision. Features: TF-IDF over the failure reason, the failed stage and the error lines of the execution log
 (numbers and paths masked), plus one-hot categorical flags (test family, owner, domain, evidence present or not).
 Labels: runs humans tagged as test-content issues (positives) vs runs linked to a product bug (negatives).
+
+Two arms behind one verdict (Triage): editable, stored rules (precision-pruned, each tagged infra or test_content, shown by name in the
+UI) run first; the logistic regression above is the model arm for what the rules do not cover.
 """
 from __future__ import annotations
+
+from dataclasses import dataclass, field
 
 import numpy as np
 from scipy.sparse import hstack
@@ -53,3 +58,50 @@ class IssueDetector:
     def flag(self, row) -> tuple[bool, float]:
         s = float(self.model.predict_proba(self._x([row]))[:, 1][0])
         return s >= self.tau, s
+
+
+@dataclass
+class Rule:
+    """One stored triage rule: fires when any `any_of` phrase is in the failure reason / log and no `none_of` phrase is."""
+    name: str
+    kind: str                                   # "infra" | "test_content"
+    any_of: list[str]
+    none_of: list[str] = field(default_factory=list)
+
+    def fires(self, row) -> bool:
+        t = " ".join(row["lines"]).lower()
+        return any(p in t for p in self.any_of) and not any(p in t for p in self.none_of)
+
+
+class RuleTriage:
+    """Rules live in a shared store (users can add their own); base rules are pruned by measured precision."""
+
+    def __init__(self, rules: list[Rule]):
+        self.rules = rules
+
+    def prune(self, rows, y, min_precision: float = .9):
+        """Keep a rule only if its precision on labelled runs (non-bug = positive) is at least `min_precision`."""
+        keep = []
+        for ru in self.rules:
+            hit = [yy for r, yy in zip(rows, y) if ru.fires(r)]
+            if hit and sum(hit) / len(hit) >= min_precision:
+                keep.append(ru)
+        self.rules = keep
+        return self
+
+    def match(self, row):
+        return next((ru for ru in self.rules if ru.fires(row)), None)
+
+
+class Triage:
+    """Rules first (explainable by rule name), then the model arm at its >= 90% precision threshold."""
+
+    def __init__(self, rules: RuleTriage, model: IssueDetector):
+        self.rules, self.model = rules, model
+
+    def flag(self, row) -> tuple[bool, str]:
+        ru = self.rules.match(row)
+        if ru:
+            return True, f"rule:{ru.name} ({ru.kind})"
+        hit, score = self.model.flag(row)
+        return hit, f"model:{score:.2f}"

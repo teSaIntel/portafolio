@@ -177,6 +177,23 @@ class KG:
         return {"runs": len(runs), "tests": tests.most_common(5), "hosts": hosts.most_common(5), "related": rel,
                 "domain": [(e.dst, e.conf) for e in self.out[b] if e.rel == "BUG_IN_DOMAIN"]}
 
+    def candidate_facts(self, run: dict, bug: str, cutoff=None) -> dict:
+        """Deterministic facts about one candidate bug for this run (the KG node of the investigation graph; no model).
+        Shared test / host / config / owner with the bug's earlier linked runs; the run itself and later links are hidden."""
+        rn = nid("Run", run["run"])
+        b = bug if ":" in bug else nid("Bug", bug)
+        runs = self._links(b, cutoff, rn)
+        def vals(r, rel):
+            return {e.dst for e in self.out[r] if e.rel == rel}
+        mine = {rel: vals(rn, rel) for rel in ("OF_TEST", "RAN_ON", "ON_CONFIG")}
+        seen = {rel: set().union(*(vals(x, rel) for x in runs)) if runs else set() for rel in mine}
+        owners = {e.dst for t in seen["OF_TEST"] for e in self.out[t] if e.rel == "OWNED_BY"}
+        my_owners = {e.dst for t in mine["OF_TEST"] for e in self.out[t] if e.rel == "OWNED_BY"}
+        created = self.nodes.get(b, {}).get("created")
+        return {"links_before": len(runs), "same_test": bool(mine["OF_TEST"] & seen["OF_TEST"]),
+                "same_host": bool(mine["RAN_ON"] & seen["RAN_ON"]), "same_config": bool(mine["ON_CONFIG"] & seen["ON_CONFIG"]),
+                "same_owner": bool(my_owners & owners), "filed_before_run": created is None or created <= str(run["start"])}
+
     def expert(self, run: dict, kb, k: int = 5, cutoff=None) -> list[str]:
         """The graph picks the bugs of the run's domain, the KB ranks their text against the run's lines."""
         pool = {b.split(":", 1)[1] for b, _ in self.domain_view(run["domain"], cutoff, nid("Run", run["run"]))}

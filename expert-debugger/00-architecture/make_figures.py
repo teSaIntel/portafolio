@@ -108,13 +108,13 @@ ax.set_xticks(list(x), splits)
 ax.set_ylabel("correct bug picks downstream")
 ax.legend(frameon=False)
 ax.set_title("Root-cause writer: local model vs commercial API")
-save(fig, "05-rca-agent", "fig-writer.png")
+save(fig, "05-rca-writer", "fig-writer.png")
 
 # 8. Debugger second look (one domain, rescue = ranker wrong at top-1 but truth in top-3)
 fig, ax = plt.subplots(figsize=(8.5, 4.2))
 bars(ax, ["Ranker only", "Deterministic\nre-ranker", "+ LLM judge", "+ evidence tiers\n+ situational flags"], [0, 56, 78, 89], [MUTED, ACC, ACC2, GOOD], fmt="{:.0f}%")
 ax.set_title("Second-look debugger: rescue rate on ranker misses")
-save(fig, "05-rca-agent", "fig-second-look.png")
+save(fig, "05-rca-writer", "fig-second-look.png")
 
 # 9. Bug classifier champion (fleet snapshot, 1,591 runs / 292 bug-linked) and its open-set router
 fig, ax = plt.subplots(1, 2, figsize=(12, 4.4))
