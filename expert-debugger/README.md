@@ -3,7 +3,7 @@
 An AI system that reads a failed validation run (logs, kernel traces, telemetry, test metadata) and either
 **links it to the known bug that caused it, explains the root cause, or declares it a new bug**.
 It combines classic ML, retrieval, a knowledge graph, an LLM agent graph and a fine-tuned LLM judge,
-trained on several years of human triage decisions. Every model is **served on local GPUs at zero API cost**.
+trained on 100+ tests debugged by engineers. Every model is **served on local GPUs at zero API cost**.
 
 **Deployed and available to debuggers.** The system is integrated into the validation team's triage web app, where debuggers use it daily
 on live failures. A guided flow walks them from noise filtering to known issues, the agent's root cause and new issues,
@@ -50,12 +50,16 @@ and improves accuracy on every board, most on bugs the system has never seen.
 
 ### Current system: latest champions (frozen 2026-11-09, wired and evaluated through 2026-11-19)
 
+**Commercial reference.** The reference is **Claude Haiku**. Iterations with a larger Claude model (Sonnet) performed the same as Haiku, so Haiku was used for the full 200-failure runs to avoid the extra API cost per failure.
+It is a single LLM call placed in the **same agent-graph node** as the local model, with the same prompts, evidence and verifier, **not** an off-the-shelf CLI coding agent with its own loop and file or shell tools, so the comparison isolates the model.
+The local writer **matches** it overall and **beats** it on bugs never seen in training.
+
 ![champion](00-architecture/fig-champion.png)
 
 | System | Failures | Correct | Accuracy | Notes |
 |---|---|---|---|---|
 | Classic ML ranker only | 197 | 137 | 69.5% | Suggests a known issue, no root cause |
-| Commercial LLM agent (reference) | 197 | 131 | 66.5% | API cost per call |
+| Commercial LLM (Claude Haiku, reference) | 197 | 131 | 66.5% | API cost per call |
 | **Local 8B writer, DPO champion** | 197 | **129** | **65.5%** | Tied with the commercial agent (128 vs 130 on 196 shared, McNemar p = 0.79), 0 API cost |
 | Classic ML ranker only | 258 | 192 | 74.4% | No LLM |
 | **Local writer + matcher + expert preload** | 258 | **200** | **77.5%** | +10 / −2 vs ranker only, p = 0.039 |
@@ -98,7 +102,7 @@ and a bad one, and is nudged to prefer the good. The first writer only imitates;
 | System | Top-1 correct | Unseen bugs (n=72) | API cost |
 |---|---|---|---|
 | No-LLM ranker (classic ML) | 69.7% | 63.9% | 0 |
-| Commercial LLM agent + confidence gate | 73.1% | 41.7% | per call |
+| Commercial LLM (Claude) + confidence gate | 73.1% | 41.7% | per call |
 | **Local fine-tuned 8B matcher** | **73.9%** | **66.7%** | **0** |
 | **Local 8B matcher + confidence gate** | **77.3%** | – | **0** |
 
@@ -145,7 +149,7 @@ flowchart LR
 | **Qwen3-8B** | Writer and matcher | Local open-weights base model |
 | **LLM agents** | RCA writer | Writes the evidence-cited root cause from a prepared evidence digest |
 | **Custom MCP server (Model Context Protocol)** | Tool layer, connected to the triage web app | Our own MCP server that gives the writer and verifier read-only access to the run's logs, kernel traces and metadata and lets them run several operations on them (windowed log reads, kernel-error search, fact extraction, pattern match). The same server backs the web app |
-| **Agent graph (LangGraph-style state machine)** | Investigation stage | Nodes, verify-revise loop, Done exit with a step cap |
+| **LangGraph (agent graph)** | Investigation stage | Nodes, verify-revise loop, Done exit with a step cap |
 | **vLLM** | Inference | High-throughput LLM serving engine (continuous batching, OpenAI-style API), one endpoint per model, no external API |
 | **Intel XPU GPUs** | Training and inference | All fine-tuning and serving run on Intel data-centre GPUs (XPU backend for PyTorch and vLLM) |
 | **RLHF-family experiments (GRPO, PPO, best-of-N, MCTS)** | Research track | Tested against the SFT + DPO champion, not adopted |
@@ -214,7 +218,7 @@ flowchart TB
 | **Writer** | Reads the evidence digest and writes the root cause as an ordered error chain, each link a verbatim log line | Qwen3-8B, 4-bit QLoRA, behaviour cloning then 3 rounds of DPO | 129 of 197, tied with a commercial agent at zero cost |
 | **Tool layer (custom MCP)** | A custom MCP server wired to the triage web app. Metadata, windowed log reader, kernel-error search over the whole run, typed fact extraction, cross-run pattern match | 7 tools, read-only, run-scoped, outputs capped | Lets the writer and verifier nodes reach the logs and chain several operations; builds the evidence they work from |
 | **Verifier** | Deterministic checks on the writer's answer: severe signatures never mentioned, evidence lines not found in the given evidence, test-content vs product contradictions | Plain code, free to run | Drives the revise loop |
-| **Agent graph loop** | `XP → Writer → Verifier → (Revise → Verifier)* → Done`. Exits when verified, stable, no valid output, or the step cap is hit | Explicit state machine, LangGraph-style, plain Python | Paired no-loop vs loop scoring on every run |
+| **Agent graph loop** | `XP → Writer → Verifier → (Revise → Verifier)* → Done`. Exits when verified, stable, no valid output, or the step cap is hit | Explicit state machine built with LangGraph | Paired no-loop vs loop scoring on every run |
 | **KG node** | Looks up deterministic facts per candidate bug (same test definition, stack, host, owner, filed before this run) and feeds them to the matcher | Graph queries, no model | Gold bug shares the test definition 58% of the time vs 9% for wrong candidates |
 | **Matcher** | Reads evidence, root cause and shortlist and picks one bug or NONE | Qwen3-8B, 4-bit QLoRA SFT, 8k context | 73.9% top-1, 66.7% on unseen bugs |
 | **Confidence gate** | Auto-link when sure, human review otherwise, new-bug draft on NONE | Calibrated thresholds | 85.4% precision on auto-links, 77.3% top-1 with the gate |

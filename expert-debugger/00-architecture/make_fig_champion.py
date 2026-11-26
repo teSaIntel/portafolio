@@ -19,7 +19,7 @@ def bars(ax, labels, vals, colors):
 
 
 fig, ax = plt.subplots(1, 3, figsize=(15, 4.8))
-bars(ax[0], ["Ranker\n(no root cause)", "First 8B\nwriter (SFT)", "Champion 8B\nwriter (DPO)", "Commercial\nLLM agent"],
+bars(ax[0], ["Ranker\n(no root cause)", "First 8B\nwriter (SFT)", "Champion 8B\nwriter (DPO)", "Commercial LLM\n(Claude Haiku)"],
      [137 / 197 * 100, 127 / 197 * 100, 129 / 197 * 100, 131 / 197 * 100], [MUTED, ACC2, ACC, MUTED])
 ax[0].set_title("Writer alone, same 197 failures")
 ax[0].set_ylabel("% correct bug")
@@ -42,7 +42,7 @@ fig.savefig(os.path.join(HERE, "fig-champion.png"), bbox_inches="tight")
 
 # Writer lineage: behaviour cloning only vs the DPO champion, same 197 failures
 fig, ax = plt.subplots(1, 3, figsize=(14, 4.4))
-bars(ax[0], ["First writer\n(SFT only)", "Champion\n(SFT + DPO)", "Commercial\nLLM agent"], [127 / 197 * 100, 129 / 197 * 100, 131 / 197 * 100],
+bars(ax[0], ["First writer\n(SFT only)", "Champion\n(SFT + DPO)", "Commercial LLM\n(Claude Haiku)"], [127 / 197 * 100, 129 / 197 * 100, 131 / 197 * 100],
      [ACC2, ACC, MUTED])
 ax[0].set_title("Correct bug, 197 failures")
 bars(ax[1], ["First writer\n(SFT only)", "Champion\n(SFT + DPO)"], [80 / 119 * 100, 85 / 119 * 100], [ACC2, ACC])

@@ -12,7 +12,7 @@ The answer is hidden, so the writer has to find it in the evidence. *(Formerly c
 |---|---|---|---|
 | First local writer (behaviour cloning only) | 127 (64.5%) | 80 (67.2%) | 24 |
 | **Champion (behaviour cloning + 3 DPO rounds)** | **129 (65.5%)** | **85 (71.4%)** | **21** |
-| Commercial LLM agent (reference) | 131 (66.5%) | – | – |
+| Commercial LLM (Claude Haiku, reference) | 131 (66.5%) | – | – |
 
 The champion is **statistically tied with the commercial agent** (128 vs 130 on 196 shared failures, McNemar p = 0.79) at zero API cost.
 Inside the full chain it is what lifts the final answer to 77.5% on the main board.

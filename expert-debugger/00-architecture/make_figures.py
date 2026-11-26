@@ -26,11 +26,11 @@ def bars(ax, labels, vals, colors, fmt="{:.1f}%", ymax=100):
 
 # 1. Headline: held-out test set, 119 bug-linked failures (same failures for every system)
 fig, ax = plt.subplots(1, 2, figsize=(12, 4.6))
-lab = ["No-LLM\nranker", "Commercial LLM\nagent + gate", "Local 8B\nmatcher", "Local 8B\nmatcher + gate"]
+lab = ["No-LLM\nranker", "Commercial LLM\n(Claude) + gate", "Local 8B\nmatcher", "Local 8B\nmatcher + gate"]
 bars(ax[0], lab, [83 / 119 * 100, 87 / 119 * 100, 88 / 119 * 100, 92 / 119 * 100], [MUTED, ACC2, ACC, GOOD])
 ax[0].set_title("Top-1 correct bug, held-out test (n=119)")
 ax[0].set_ylabel("% of failures")
-bars(ax[1], ["No-LLM ranker", "Commercial LLM\nagent", "Local 8B matcher"], [46 / 72 * 100, 30 / 72 * 100, 48 / 72 * 100], [MUTED, ACC2, ACC])
+bars(ax[1], ["No-LLM ranker", "Commercial LLM\n(Claude)", "Local 8B matcher"], [46 / 72 * 100, 30 / 72 * 100, 48 / 72 * 100], [MUTED, ACC2, ACC])
 ax[1].set_title("Bugs never seen in training (n=72)")
 save(fig, "00-architecture", "fig-headline.png")
 
@@ -42,7 +42,7 @@ ax.plot(steps, [v / 119 * 100 for v in vals], marker="o", lw=2.5, color=ACC)
 for i, v in enumerate(vals):
     ax.annotate(f"{v / 119 * 100:.1f}%", (i, v / 119 * 100), textcoords="offset points", xytext=(0, 9), ha="center")
 ax.axhline(68 / 119 * 100, ls="--", color=ACC2)
-ax.text(3.05, 68 / 119 * 100 - 3.2, "commercial LLM agent", color=ACC2, ha="right", fontsize=9)
+ax.text(3.05, 68 / 119 * 100 - 3.2, "commercial LLM (Claude)", color=ACC2, ha="right", fontsize=9)
 ax.set_ylim(50, 85)
 ax.set_ylabel("top-1 correct (%)")
 ax.set_title("Bug matcher: four training iterations, same test set")
